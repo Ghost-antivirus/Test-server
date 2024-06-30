@@ -1,60 +1,56 @@
-from http.server import BaseHTTPRequestHandler, HTTPServer
-import json
+from flask import Flask, request, jsonify
 
+app = Flask(__name__)
+
+# Словарь для хранения команд для клиентов
 commands = {}
+# Словарь для хранения результатов от клиентов
 results = {}
 
-class RequestHandler(BaseHTTPRequestHandler):
-    def do_POST(self):
-        content_length = int(self.headers['Content-Length'])
-        post_data = self.rfile.read(content_length)
-        data = json.loads(post_data)
+@app.route('/send_result', methods=['POST'])
+def send_result():
+    data = request.json
+    client_id = data['client_id']
+    result = data['result']
+    
+    if client_id in results:
+        results[client_id].append(result)
+    else:
+        results[client_id] = [result]
+    
+    return jsonify({"message": "Result received"}), 200
 
-        if self.path == '/send_result':
-            client_id = data['client_id']
-            result = data['result']
-            if client_id in results:
-                results[client_id].append(result)
-            else:
-                results[client_id] = [result]
-            self._send_response(200, {"message": "Result received"})
+@app.route('/get_command', methods=['GET'])
+def get_command():
+    client_id = request.args.get('client_id')
+    
+    if client_id in commands and commands[client_id]:
+        command = commands[client_id].pop(0)
+        return jsonify({"command": command}), 200
+    else:
+        return jsonify({"command": ""}), 200
 
-        elif self.path == '/admin/send_command':
-            client_id = data['client_id']
-            command = data['command']
-            if client_id in commands:
-                commands[client_id].append(command)
-            else:
-                commands[client_id] = [command]
-            self._send_response(200, {"message": "Command sent"})
+@app.route('/admin/send_command', methods=['POST'])
+def admin_send_command():
+    data = request.json
+    client_id = data['client_id']
+    command = data['command']
+    
+    if client_id in commands:
+        commands[client_id].append(command)
+    else:
+        commands[client_id] = [command]
+    
+    return jsonify({"message": "Command sent"}), 200
 
-    def do_GET(self):
-        if self.path.startswith('/get_command'):
-            client_id = self.path.split('client_id=')[1]
-            if client_id in commands and commands[client_id]:
-                command = commands[client_id].pop(0)
-                self._send_response(200, {"command": command})
-            else:
-                self._send_response(200, {"command": ""})
-
-        elif self.path.startswith('/admin/get_results'):
-            client_id = self.path.split('client_id=')[1]
-            if client_id in results:
-                self._send_response(200, {"results": results[client_id]})
-            else:
-                self._send_response(200, {"results": []})
-
-    def _send_response(self, status, response):
-        self.send_response(status)
-        self.send_header('Content-Type', 'application/json')
-        self.end_headers()
-        self.wfile.write(json.dumps(response).encode('utf-8'))
-
-def run(server_class=HTTPServer, handler_class=RequestHandler, port=5000):
-    server_address = ('', port)
-    httpd = server_class(server_address, handler_class)
-    print(f'Starting server on port {port}...')
-    httpd.serve_forever()
+@app.route('/admin/get_results', methods=['GET'])
+def admin_get_results():
+    client_id = request.args.get('client_id')
+    
+    if client_id in results:
+        return jsonify({"results": results[client_id]}), 200
+    else:
+        return jsonify({"results": []}), 200
 
 if __name__ == '__main__':
-    run()
+    app.run(host='0.0.0.0', port=5000)
